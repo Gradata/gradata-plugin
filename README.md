@@ -6,16 +6,21 @@ AI that learns your judgment. Gradata captures your corrections to AI output, ex
 
 ```bash
 # Clone into your Claude Code plugins directory
-git clone https://github.com/gradata-ai/gradata-plugin ~/.claude/plugins/gradata
+git clone https://github.com/Gradata/gradata-plugin ~/.claude/plugins/gradata
 
 # Install the Python SDK (required for the daemon)
 pip install gradata
 ```
 
 Verify the plugin loaded:
-```
+```text
 /gradata doctor
 ```
+
+To connect the local SDK to Gradata Cloud, open the dashboard setup flow at
+`https://app.gradata.ai/setup`, generate an API key from the API Keys page, then paste it into
+the SDK setup snippet. Keys are shown once; `/gradata doctor` can diagnose local daemon and
+plugin connectivity after setup.
 
 ## How It Works
 
@@ -56,7 +61,9 @@ Rules that stop being useful decay. Rules that conflict get flagged. The system 
 +-------------------------------------------+
 ```
 
-The plugin communicates with a local Python daemon over HTTP. All processing happens on your machine. The daemon manages the brain vault (lessons, rules, events) per project.
+The plugin communicates with a local Python daemon over HTTP. Local processing happens on your
+machine, and the daemon manages the brain vault (lessons, rules, events) per project. Cloud sync
+is available when you configure a Gradata Cloud API key; otherwise the plugin remains local-only.
 
 ## Commands
 
@@ -98,8 +105,15 @@ Verify the plugin directory contains `.claude-plugin/plugin.json`. Run `ls ~/.cl
 
 - All data stays local in `~/.gradata/`
 - The daemon binds to `127.0.0.1` only -- no network exposure
-- No cloud sync in v1
+- Cloud sync is optional and only runs when you configure a Gradata Cloud API key
 - Optional anonymous telemetry is opt-in and content-free (event counts only)
+
+## Cloud is optional
+
+You can use the plugin entirely locally with the Python SDK and Claude Code plugin installed.
+Cloud sync adds hosted backup, dashboard visibility, and cross-machine continuity, but it is not
+required for local rule capture, graduation, or injection. Generate a key at
+`https://app.gradata.ai/api-keys` and follow `https://app.gradata.ai/setup` when you want to connect.
 
 ## Requirements
 
@@ -109,4 +123,4 @@ Verify the plugin directory contains `.claude-plugin/plugin.json`. Run `ls ~/.cl
 
 ## License
 
-AGPL-3.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
