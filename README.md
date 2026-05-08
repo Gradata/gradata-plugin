@@ -33,7 +33,16 @@ node ~/.gradata/plugin/setup/doctor.js
 - **AGENTS.md** updated with a Gradata section between `<!-- BEGIN GRADATA -->`
   and `<!-- END GRADATA -->` markers (re-runs replace the section in place).
 - **Daemon-ready config** at `~/.gradata/config.toml` pointing at a working
-  `python3 >= 3.10`. Install `pip install gradata` to bring up the daemon.
+  `python3 >= 3.10`. Install the SDK from git source to bring up the daemon
+  (PyPI publish coming soon; install from source for now):
+
+  ```sh
+  pip install git+https://github.com/Gradata/gradata.git#subdirectory=Gradata
+  # or, on system Python (Debian/Ubuntu — handles PEP 668):
+  pip install --user git+https://github.com/Gradata/gradata.git#subdirectory=Gradata
+  # or with pipx (recommended for isolation):
+  pipx install git+https://github.com/Gradata/gradata.git#subdirectory=Gradata
+  ```
 
 ## Privacy
 
@@ -150,7 +159,7 @@ when you want to connect.
 - Python 3.10+
 - Node.js 18+
 - An AGENTS.md-aware agent CLI
-- `gradata` Python package (`pip install gradata`)
+- `gradata` Python package (install from git: `pip install git+https://github.com/Gradata/gradata.git#subdirectory=Gradata` — PyPI publish coming soon)
 
 ## License
 

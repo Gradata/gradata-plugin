@@ -44,6 +44,67 @@ function hasGradata(pythonPath) {
   } catch { return false; }
 }
 
+// SDK install source: PyPI publish is not yet live. Install from git source.
+// Package lives in the `Gradata/` subdirectory of the repo.
+const SDK_GIT_URL = 'git+https://github.com/Gradata/gradata.git#subdirectory=Gradata';
+const SDK_INSTALL_HINT = `pip install ${SDK_GIT_URL}`;
+
+function isPep668Error(stderr) {
+  if (!stderr) return false;
+  const s = String(stderr).toLowerCase();
+  return s.indexOf('externally-managed-environment') !== -1
+    || s.indexOf('externally managed') !== -1
+    || s.indexOf('pep 668') !== -1;
+}
+
+// Tiered install: plain → --user → --break-system-packages (gated on env).
+// Returns { ok: bool, mode: string, stderr: string }.
+function installSdkTiered(pythonPath) {
+  const base = `"${pythonPath}" -m pip install ${SDK_GIT_URL}`;
+  const opts = { encoding: 'utf8', windowsHide: true, timeout: 300000, stdio: ['ignore', 'inherit', 'pipe'] };
+  // 1) plain
+  try {
+    execSync(base, opts);
+    return { ok: true, mode: 'plain', stderr: '' };
+  } catch (e1) {
+    const err1 = (e1.stderr && e1.stderr.toString()) || '';
+    if (!isPep668Error(err1)) {
+      // Not a PEP 668 issue — propagate.
+      return { ok: false, mode: 'plain', stderr: err1 || (e1.message || '') };
+    }
+    console.log('PEP 668 detected (externally-managed-environment). Retrying with --user...');
+    // 2) --user
+    try {
+      execSync(`${base} --user`, opts);
+      return { ok: true, mode: '--user', stderr: '' };
+    } catch (e2) {
+      const err2 = (e2.stderr && e2.stderr.toString()) || '';
+      // 3) --break-system-packages, gated by env var
+      if (process.env.GRADATA_FORCE_SYSTEM_PIP === '1') {
+        console.log('GRADATA_FORCE_SYSTEM_PIP=1 set. Retrying with --break-system-packages...');
+        try {
+          execSync(`${base} --break-system-packages`, opts);
+          return { ok: true, mode: '--break-system-packages', stderr: '' };
+        } catch (e3) {
+          const err3 = (e3.stderr && e3.stderr.toString()) || '';
+          return { ok: false, mode: '--break-system-packages', stderr: err3 || (e3.message || '') };
+        }
+      }
+      return { ok: false, mode: '--user', stderr: err2 || (e2.message || '') };
+    }
+  }
+}
+
+function printPep668Help(pythonPath) {
+  console.log('');
+  console.log('SDK install blocked. Your Python is externally-managed (PEP 668).');
+  console.log('Pick one of:');
+  console.log(`  pipx install ${SDK_GIT_URL}`);
+  console.log(`  uv tool install ${SDK_GIT_URL}`);
+  console.log(`  python3 -m venv ~/.gradata/venv && ~/.gradata/venv/bin/pip install ${SDK_GIT_URL}`);
+  console.log(`  GRADATA_FORCE_SYSTEM_PIP=1 "${pythonPath}" -m pip install --break-system-packages ${SDK_GIT_URL}`);
+}
+
 function writeConfig(pythonPath) {
   fs.mkdirSync(GRADATA_HOME, { recursive: true });
   const configPath = path.join(GRADATA_HOME, 'config.toml');
@@ -168,19 +229,27 @@ async function main() {
     console.log('Gradata SDK not found.');
     let doInstall = AUTO;
     if (!AUTO) {
-      const answer = await ask(`Install? Run: "${python.absPath}" -m pip install gradata [Enter/n] `);
+      const answer = await ask(`Install? Run: "${python.absPath}" -m pip install ${SDK_GIT_URL} [Enter/n] `);
       doInstall = answer.toLowerCase() !== 'n';
     }
     if (!doInstall) {
-      console.log('Skipped. Run manually: pip install gradata');
+      console.log(`Skipped. Run manually: ${SDK_INSTALL_HINT}`);
     } else {
-      try {
-        console.log('Installing gradata...');
-        execSync(`"${python.absPath}" -m pip install gradata`, { stdio: 'inherit', windowsHide: true, timeout: 120000 });
-        console.log('Installed successfully.');
+      console.log('Installing gradata from git source...');
+      const result = installSdkTiered(python.absPath);
+      if (result.ok) {
+        console.log(`Installed successfully (${result.mode}).`);
         sdkInstalled = hasGradata(python.absPath);
-      } catch {
-        console.log(`SDK install failed (package may not yet be on PyPI). Try: "${python.absPath}" -m pip install gradata`);
+      } else {
+        if (isPep668Error(result.stderr)) {
+          printPep668Help(python.absPath);
+        } else {
+          console.log(`SDK install failed. Try manually: "${python.absPath}" -m pip install ${SDK_GIT_URL}`);
+          if (result.stderr) {
+            const tail = result.stderr.split('\n').slice(-5).join('\n');
+            console.log(tail);
+          }
+        }
         if (!AUTO) process.exit(1);
       }
     }
@@ -216,7 +285,7 @@ async function main() {
 
   // --auto + SDK install failure → loud failure with non-zero exit.
   if (AUTO && !sdkInstalled) {
-    console.error('\n[FAIL] gradata SDK install failed. Run: pip install gradata');
+    console.error('\n[FAIL] gradata SDK install failed. Run: ' + SDK_INSTALL_HINT);
     console.error('Run doctor for full diagnostics: node ' + path.join(GRADATA_HOME, 'plugin/setup/doctor.js'));
     process.exit(1);
   }

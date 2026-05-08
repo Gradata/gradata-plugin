@@ -59,7 +59,7 @@ function checkSDK(py) {
     }).trim();
     record('gradata SDK installed', true, `v${v}`, true);
   } catch {
-    record('gradata SDK installed', false, 'import gradata failed (SDK not installed)', true);
+    record('gradata SDK installed', false, 'import gradata failed — install from source: pip install git+https://github.com/Gradata/gradata.git#subdirectory=Gradata', true);
   }
 }
 
