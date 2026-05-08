@@ -1,59 +1,85 @@
-# Gradata Plugin for Claude Code
+# Gradata Plugin for AGENTS.md-aware agent CLIs
 
-AI that learns your judgment. Gradata captures your corrections to AI output, extracts behavioral instructions, and graduates them into rules that auto-inject into future sessions. Over time, the AI converges on how *you* think -- not generally smarter, but calibrated to you.
+Gradata is a learning layer for AI coding agents. It captures the corrections
+you make to agent output, extracts behavioral instructions from those
+corrections, and graduates them into durable rules that auto-inject into
+future sessions. Over time the agent converges on *your* judgment.
 
-## Install
+The plugin is vendor-neutral: hooks and skills work with any CLI that reads
+`AGENTS.md` (Claude Code, Codex, Cursor, Hermes, OpenCode, Windsurf, …).
 
-```bash
-# Clone into your Claude Code plugins directory
-git clone https://github.com/Gradata/gradata-plugin ~/.claude/plugins/gradata
+## Quick install
 
-# Install the Python SDK (required for the daemon)
-pip install gradata
+```sh
+curl -fsSL https://raw.githubusercontent.com/Gradata/gradata-plugin/main/install.sh | sh
 ```
 
-Verify the plugin loaded:
-```text
-/gradata doctor
+## Or install manually
+
+```sh
+git clone --depth 1 https://github.com/Gradata/gradata-plugin "$HOME/.gradata/plugin"
+node "$HOME/.gradata/plugin/setup/install.js" --auto
 ```
 
-To connect the local SDK to Gradata Cloud, open the dashboard setup flow at
-`https://app.gradata.ai/setup`, generate an API key from the API Keys page, then paste it into
-the SDK setup snippet. Keys are shown once; `/gradata doctor` can diagnose local daemon and
-plugin connectivity after setup.
+## Verify
 
-## How It Works
+```sh
+node ~/.gradata/plugin/setup/doctor.js
+```
 
-Gradata runs a three-stage graduation pipeline. Corrections start weak and strengthen through repetition:
+## What this added to your setup
+
+- **Plugin checkout** at `~/.gradata/plugin/` (hooks + skills + setup).
+- **AGENTS.md** updated with a Gradata section between `<!-- BEGIN GRADATA -->`
+  and `<!-- END GRADATA -->` markers (re-runs replace the section in place).
+- **Daemon-ready config** at `~/.gradata/config.toml` pointing at a working
+  `python3 >= 3.10`. Install `pip install gradata` to bring up the daemon.
+
+## Supported agent CLIs
+
+- **Claude Code** — installer also creates `~/.claude/plugins/gradata`
+  symlinking the checkout, so `/gradata` slash-commands work out of the box.
+- **Codex / OpenCode / Hermes / Cursor / Windsurf** — pick up the Gradata
+  block from `AGENTS.md` automatically. The `gradata-quickstart` skill
+  provides the full reference; the doctor command is the universal health
+  check: `node ~/.gradata/plugin/setup/doctor.js`.
+
+Any other AGENTS.md-aware CLI works the same way: read the AGENTS.md block,
+load the quickstart skill if you need detail, run the doctor for diagnostics.
+
+---
+
+## How it works
+
+Gradata runs a three-stage graduation pipeline. Corrections start weak and
+strengthen through repetition:
 
 ```
-Session 1: You correct Claude's output (change em dash to comma in an email)
+Session 1: You correct an em dash to a comma in a draft email
            -> Gradata extracts: "Never use em dashes in email prose"
-           -> Lesson created as INSTINCT (confidence 0.40)
-
+           -> Lesson created as INSTINCT
 Session 3: Same correction again
-           -> Confidence boosted to PATTERN (0.60)
-
-Session 7: No more em dash corrections needed
-           -> Graduated to RULE (confidence 0.90)
-           -> Auto-injected into every future session
+           -> Promoted to PATTERN
+Session 7: Em dash corrections stop
+           -> Graduated to RULE; auto-injected into every relevant session
 ```
 
-Rules that stop being useful decay. Rules that conflict get flagged. The system self-corrects.
+Rules that stop being useful decay. Rules that conflict get flagged. The
+system self-corrects.
 
 ## Architecture
 
 ```
 +-------------------------------------------+
-| Claude Code                               |
+| Agent CLI (any AGENTS.md-aware runtime)   |
 |                                           |
-|  SessionStart --> inject rules            |
-|  UserPrompt  --> scope-match + detect     |
-|  Edit        --> capture correction       |
-|  Stop        --> graduation sweep         |
+|  SessionStart --> inject graduated rules  |
+|  UserPrompt   --> scope-match + detect    |
+|  Edit         --> capture correction      |
+|  Stop         --> graduation sweep        |
 |         |                                 |
 |         v                                 |
-|  localhost HTTP daemon (Python)            |
+|  localhost HTTP daemon (Python)           |
 |         |                                 |
 |         v                                 |
 |  ~/.gradata/projects/<hash>/              |
@@ -61,64 +87,70 @@ Rules that stop being useful decay. Rules that conflict get flagged. The system 
 +-------------------------------------------+
 ```
 
-The plugin communicates with a local Python daemon over HTTP. Local processing happens on your
-machine, and the daemon manages the brain vault (lessons, rules, events) per project. Cloud sync
-is available when you configure a Gradata Cloud API key; otherwise the plugin remains local-only.
+The plugin communicates with a local Python daemon over HTTP on `127.0.0.1`.
+All processing is local. The daemon manages the brain vault (lessons, rules,
+events) per project. Cloud sync is optional and only runs when you configure
+a Gradata Cloud API key.
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `/gradata status` | Show brain health: rule count, lesson stats, session number |
-| `/gradata doctor` | Diagnose daemon, config, and plugin connectivity |
-| `/gradata review` | Review pending lessons and promote/reject them |
-| `/gradata promote` | Manually promote a lesson to a higher confidence tier |
-| `/gradata forget` | Remove a lesson or rule by ID |
-| `/gradata prove` | Generate a provenance proof for the current brain state |
+- `status` — brain health: rule count, lesson stats, session number.
+- `doctor` — diagnose daemon, config, plugin layout, AGENTS.md state.
+- `review` — review pending lessons and promote / reject them.
+- `promote` — manually promote a lesson to a higher tier.
+- `forget` — remove a lesson or rule by ID.
+- `prove` — generate a provenance proof for the current brain state.
 
-## Detection Signals
+In Claude Code these are `/gradata <cmd>`. In other CLIs invoke the
+equivalent skill by name (`gradata-status`, `gradata-doctor`, …) or run
+`node ~/.gradata/plugin/setup/doctor.js` for the universal health check.
+
+## Detection signals
 
 The plugin detects corrections through multiple channels:
 
-- **Explicit corrections** -- edits to AI-generated output (diffs tracked by severity)
-- **Implicit feedback** -- phrases like "that's wrong", "stop doing X", "I told you before"
-- **Acceptance signals** -- a rule fires and the output is not corrected (reinforcement)
-- **Addition patterns** -- repeatedly adding the same thing (type annotations, imports, headers)
-- **Context switching** -- different behavior expected in code vs email vs config
-- **Correction conflicts** -- a new edit contradicts a recent lesson (flags for review)
+- **Explicit corrections** — edits to AI-generated output (diffs tracked by severity)
+- **Implicit feedback** — phrases like "that's wrong", "stop doing X", "I told you before"
+- **Acceptance signals** — a rule fires and the output is not corrected (reinforcement)
+- **Addition patterns** — repeatedly adding the same thing (type annotations, imports, headers)
+- **Context switching** — different behavior expected in code vs email vs config
+- **Correction conflicts** — a new edit contradicts a recent lesson (flags for review)
 
 ## Troubleshooting
 
-**"Daemon not available"**
-The Python daemon is not running or unreachable. Run `/gradata doctor` to diagnose. The daemon should auto-start on session begin.
+**"Daemon not available"** — The Python daemon is not running or unreachable.
+Run the doctor to diagnose. The daemon should auto-start on session begin.
 
-**"No rules injecting"**
-Rules require graduation. A correction must repeat across 3+ sessions to reach PATTERN, and further to reach RULE. Check `/gradata status` for pending lessons.
+**"No rules injecting"** — Rules require graduation. A correction must repeat
+across multiple sessions to reach PATTERN, and further to reach RULE.
 
-**"Wrong Python"**
-The daemon needs the Python environment where `gradata` is installed. Check `~/.gradata/config.toml` and update `python_path` to point to the correct interpreter.
+**"Wrong Python"** — The daemon needs the Python environment where `gradata`
+is installed. Check `~/.gradata/config.toml` and update `python_path`.
 
-**"Plugin not loading"**
-Verify the plugin directory contains `.claude-plugin/plugin.json`. Run `ls ~/.claude/plugins/gradata/.claude-plugin/` to confirm.
+**"Plugin not loading"** — Verify the plugin directory contains
+`.claude-plugin/plugin.json`. The doctor will report this.
 
 ## Privacy
 
-- All data stays local in `~/.gradata/`
-- The daemon binds to `127.0.0.1` only -- no network exposure
-- Cloud sync is optional and only runs when you configure a Gradata Cloud API key
-- Optional anonymous telemetry is opt-in and content-free (event counts only)
+- All data stays local under `~/.gradata/`.
+- The daemon binds to `127.0.0.1` only — no network exposure.
+- Cloud sync is optional and only runs when you configure an API key.
+- Optional anonymous telemetry is opt-in and content-free (event counts only).
 
 ## Cloud is optional
 
-You can use the plugin entirely locally with the Python SDK and Claude Code plugin installed.
-Cloud sync adds hosted backup, dashboard visibility, and cross-machine continuity, but it is not
-required for local rule capture, graduation, or injection. Generate a key at
-`https://app.gradata.ai/api-keys` and follow `https://app.gradata.ai/setup` when you want to connect.
+You can use the plugin entirely locally with the Python SDK and the plugin
+installed. Cloud sync adds hosted backup, dashboard visibility, and
+cross-machine continuity, but it is not required for local rule capture,
+graduation, or injection. Generate a key at
+`https://app.gradata.ai/api-keys` and follow `https://app.gradata.ai/setup`
+when you want to connect.
 
 ## Requirements
 
 - Python 3.10+
-- Claude Code CLI
+- Node.js 18+
+- An AGENTS.md-aware agent CLI
 - `gradata` Python package (`pip install gradata`)
 
 ## License
