@@ -72,3 +72,103 @@ test('idempotent on existing-with-prose: three runs converge', () => {
   assert.strictEqual(a, b);
   assert.strictEqual(b, c);
 });
+
+// --- Marker validation (P0-1, P0-2) ----------------------------------------
+
+test('corrupted: BEGIN without END → refuses, file unchanged, no throw', () => {
+  const p = tmpFile('AGENTS.md');
+  const original = `# Mine\n${BEGIN_MARKER}\nUSER STUFF\n## section\nkeep me\n`;
+  fs.writeFileSync(p, original, 'utf8');
+  const r = patchAgentsMd(p);
+  assert.strictEqual(r.action, 'refused');
+  const after = fs.readFileSync(p, 'utf8');
+  assert.strictEqual(after, original, 'file unchanged after refused patch');
+  assert.ok(after.includes('keep me'), 'user content preserved');
+});
+
+test('corrupted: multiple BEGINs → refuses', () => {
+  const p = tmpFile('AGENTS.md');
+  const original = `${BEGIN_MARKER}\nstale 1\n${END_MARKER}\n\n${BEGIN_MARKER}\nstale 2\n${END_MARKER}\nuser tail\n`;
+  fs.writeFileSync(p, original, 'utf8');
+  const r = patchAgentsMd(p);
+  assert.strictEqual(r.action, 'refused');
+  assert.strictEqual(fs.readFileSync(p, 'utf8'), original);
+});
+
+test('corrupted: END before BEGIN → refuses', () => {
+  const p = tmpFile('AGENTS.md');
+  const original = `prelude\n${END_MARKER}\nmiddle\n${BEGIN_MARKER}\ntail\n`;
+  fs.writeFileSync(p, original, 'utf8');
+  const r = patchAgentsMd(p);
+  assert.strictEqual(r.action, 'refused');
+  assert.strictEqual(fs.readFileSync(p, 'utf8'), original);
+});
+
+test('markers-in-code-fence: line-based scan does treat fenced markers as real (documented limitation)', () => {
+  // Per spec: trim()-equality scan means a marker on its own line inside a
+  // fenced block IS matched. We verify the documented behavior: with two
+  // BEGINs (one fenced, one real) the patcher refuses (multiple-begin guard
+  // protects user content).
+  const p = tmpFile('AGENTS.md');
+  const original = [
+    '# Mine',
+    '',
+    'Example block:',
+    '```',
+    BEGIN_MARKER,
+    'fenced sample',
+    END_MARKER,
+    '```',
+    '',
+    BEGIN_MARKER,
+    'real gradata block',
+    END_MARKER,
+    '',
+    'tail content',
+    '',
+  ].join('\n');
+  fs.writeFileSync(p, original, 'utf8');
+  const r = patchAgentsMd(p);
+  assert.strictEqual(r.action, 'refused', 'must refuse rather than risk overwriting fenced content');
+  assert.strictEqual(fs.readFileSync(p, 'utf8'), original, 'file unchanged');
+  assert.ok(fs.readFileSync(p, 'utf8').includes('tail content'), 'user content preserved');
+});
+
+// --- doctor.js port resolution (P0-3) --------------------------------------
+
+test('doctor: resolveDaemonPort honors GRADATA_DAEMON_PORT env var', () => {
+  // Mock GRADATA_HOME to an empty dir so config.toml lookup misses,
+  // forcing the env-var branch.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gradata-doctor-'));
+  const prevHome = process.env.GRADATA_HOME;
+  const prevPort = process.env.GRADATA_DAEMON_PORT;
+  process.env.GRADATA_HOME = dir;
+  process.env.GRADATA_DAEMON_PORT = '9999';
+  // Bust require cache so doctor re-reads env at module load.
+  delete require.cache[require.resolve('../setup/doctor.js')];
+  const { resolveDaemonPort } = require('../setup/doctor.js');
+  try {
+    assert.strictEqual(resolveDaemonPort(), 9999, 'env var honored');
+  } finally {
+    if (prevHome === undefined) delete process.env.GRADATA_HOME; else process.env.GRADATA_HOME = prevHome;
+    if (prevPort === undefined) delete process.env.GRADATA_DAEMON_PORT; else process.env.GRADATA_DAEMON_PORT = prevPort;
+    delete require.cache[require.resolve('../setup/doctor.js')];
+  }
+});
+
+test('doctor: resolveDaemonPort default is 7342 when nothing configured', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gradata-doctor-'));
+  const prevHome = process.env.GRADATA_HOME;
+  const prevPort = process.env.GRADATA_DAEMON_PORT;
+  process.env.GRADATA_HOME = dir;
+  delete process.env.GRADATA_DAEMON_PORT;
+  delete require.cache[require.resolve('../setup/doctor.js')];
+  const { resolveDaemonPort } = require('../setup/doctor.js');
+  try {
+    assert.strictEqual(resolveDaemonPort(), 7342);
+  } finally {
+    if (prevHome === undefined) delete process.env.GRADATA_HOME; else process.env.GRADATA_HOME = prevHome;
+    if (prevPort !== undefined) process.env.GRADATA_DAEMON_PORT = prevPort;
+    delete require.cache[require.resolve('../setup/doctor.js')];
+  }
+});

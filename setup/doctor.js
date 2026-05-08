@@ -74,15 +74,40 @@ function checkPlugin() {
 }
 
 // 4. daemon health (soft)
+//
+// Resolve daemon port: config.toml (port = N) > $GRADATA_DAEMON_PORT > 7342.
+function resolveDaemonPort() {
+  // 1) config.toml `port = NNNN`
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
+      const m = raw.match(/^\s*port\s*=\s*(\d+)\s*$/m);
+      if (m) {
+        const p = parseInt(m[1], 10);
+        if (Number.isInteger(p) && p > 0 && p < 65536) return p;
+      }
+    }
+  } catch {}
+  // 2) env var
+  const envPort = process.env.GRADATA_DAEMON_PORT;
+  if (envPort) {
+    const p = parseInt(envPort, 10);
+    if (Number.isInteger(p) && p > 0 && p < 65536) return p;
+  }
+  // 3) canonical default (matches hooks/lib/daemon-client.js)
+  return 7342;
+}
+
 function checkDaemon() {
+  const port = resolveDaemonPort();
   return new Promise((resolve) => {
-    const req = http.get('http://127.0.0.1:7437/health', { timeout: 1000 }, (res) => {
-      record('daemon /health', res.statusCode === 200, `status ${res.statusCode}`, false);
+    const req = http.get(`http://127.0.0.1:${port}/health`, { timeout: 1000 }, (res) => {
+      record(`daemon /health (:${port})`, res.statusCode === 200, `status ${res.statusCode}`, false);
       res.resume();
       resolve();
     });
-    req.on('timeout', () => { req.destroy(); record('daemon /health', false, 'timeout (not running?)', false); resolve(); });
-    req.on('error', (e) => { record('daemon /health', false, `not reachable (${e.code || e.message})`, false); resolve(); });
+    req.on('timeout', () => { req.destroy(); record(`daemon /health (:${port})`, false, 'timeout (not running?)', false); resolve(); });
+    req.on('error', (e) => { record(`daemon /health (:${port})`, false, `not reachable (${e.code || e.message})`, false); resolve(); });
   });
 }
 
@@ -147,4 +172,8 @@ async function main() {
   process.exit(criticalFail ? 1 : 0);
 }
 
-main().catch(e => { console.error(e.message); process.exit(2); });
+if (require.main === module) {
+  main().catch(e => { console.error(e.message); process.exit(2); });
+}
+
+module.exports = { resolveDaemonPort };

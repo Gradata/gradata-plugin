@@ -32,4 +32,9 @@ node ~/.gradata/plugin/setup/doctor.js
 the equivalent skill by name (`gradata-quickstart`, `gradata-review`, etc.).
 
 If you need full detail, load the `gradata-quickstart` skill.
+
+> Note: do not put `<!-- BEGIN GRADATA -->` or `<!-- END GRADATA -->` on
+> their own line elsewhere in this file (even inside fenced code blocks).
+> The installer scans line-by-line and treats any line that trims to one of
+> those markers as the real marker.
 <!-- END GRADATA -->

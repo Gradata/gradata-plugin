@@ -7,6 +7,14 @@
 
 set -eu
 
+# Ensure HOME is set; some non-interactive shells (cron, sudo -E, sandboxes)
+# leave it empty. Fall back to passwd lookup.
+if [ -z "${HOME:-}" ]; then
+  HOME=$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)
+  : "${HOME:?HOME is unset and could not be inferred from passwd}"
+  export HOME
+fi
+
 GRADATA_HOME="${GRADATA_HOME:-$HOME/.gradata}"
 PLUGIN_DIR="$GRADATA_HOME/plugin"
 REPO_URL="https://github.com/Gradata/gradata-plugin.git"
@@ -33,8 +41,11 @@ check_node() {
     say 'Install: https://nodejs.org/  or  `nvm install 20`'
     exit 1
   fi
-  ver=$(node -e 'process.stdout.write(String(process.versions.node.split(".")[0]))' 2>/dev/null || echo 0)
-  if [ "$ver" -lt 18 ] 2>/dev/null; then
+  ver=$(node -e 'process.stdout.write(String(process.versions.node.split(".")[0]))' 2>/dev/null || echo "")
+  case "$ver" in
+    ''|*[!0-9]*) die "could not parse node version (got: '$ver'). Try \`node -v\` manually.";;
+  esac
+  if [ "$ver" -lt 18 ]; then
     die "node >= 18 required (found $(node -v 2>/dev/null || echo unknown))"
   fi
 }
@@ -63,6 +74,10 @@ check_python() {
 ensure_repo() {
   mkdir -p "$GRADATA_HOME"
   if [ -d "$PLUGIN_DIR/.git" ]; then
+    existing_url=$(cd "$PLUGIN_DIR" && git remote get-url origin 2>/dev/null || echo "")
+    if [ -n "$existing_url" ] && [ "$existing_url" != "$REPO_URL" ]; then
+      die "$PLUGIN_DIR has a different remote ($existing_url). Refusing to update. Set GRADATA_HOME to a different path or remove the existing checkout."
+    fi
     say "Updating existing checkout at $PLUGIN_DIR"
     (cd "$PLUGIN_DIR" && git pull --ff-only --quiet) || warn 'git pull failed; continuing with existing checkout'
   elif [ -d "$PLUGIN_DIR" ] && [ -f "$PLUGIN_DIR/setup/install.js" ]; then
@@ -90,6 +105,17 @@ maybe_symlink_cc() {
   mkdir -p "$plugins_dir"
   link="$plugins_dir/gradata"
   if [ -L "$link" ]; then
+    # Resolve and refresh if stale.
+    current=$(readlink "$link" 2>/dev/null || echo "")
+    if [ "$current" = "$PLUGIN_DIR" ]; then
+      return 0
+    fi
+    rm -f "$link"
+    if ln -s "$PLUGIN_DIR" "$link" 2>/dev/null; then
+      say "Refreshed Claude Code plugin symlink: $link -> $PLUGIN_DIR (was -> $current)"
+    else
+      warn "could not refresh symlink at $link (skipping)"
+    fi
     return 0
   fi
   if [ -e "$link" ]; then

@@ -6,7 +6,7 @@ corrections, and graduates them into durable rules that auto-inject into
 future sessions. Over time the agent converges on *your* judgment.
 
 The plugin is vendor-neutral: hooks and skills work with any CLI that reads
-`AGENTS.md` (Claude Code, Codex, Cursor, Hermes, OpenCode, Windsurf, …).
+`AGENTS.md` (Claude Code, Codex, Hermes, OpenCode, …).
 
 ## Quick install
 
@@ -35,14 +35,21 @@ node ~/.gradata/plugin/setup/doctor.js
 - **Daemon-ready config** at `~/.gradata/config.toml` pointing at a working
   `python3 >= 3.10`. Install `pip install gradata` to bring up the daemon.
 
+## Privacy
+
+- Gradata does not collect telemetry. No data leaves your machine. Local files only.
+- All data stays local under `~/.gradata/`.
+- The daemon binds to `127.0.0.1` only — no network exposure.
+- Cloud sync is optional and only runs when you configure an API key.
+
 ## Supported agent CLIs
 
 - **Claude Code** — installer also creates `~/.claude/plugins/gradata`
   symlinking the checkout, so `/gradata` slash-commands work out of the box.
-- **Codex / OpenCode / Hermes / Cursor / Windsurf** — pick up the Gradata
-  block from `AGENTS.md` automatically. The `gradata-quickstart` skill
-  provides the full reference; the doctor command is the universal health
-  check: `node ~/.gradata/plugin/setup/doctor.js`.
+- **Codex / OpenCode / Hermes** — pick up the Gradata block from `AGENTS.md`
+  automatically. The `gradata-quickstart` skill provides the full reference;
+  the doctor command is the universal health check:
+  `node ~/.gradata/plugin/setup/doctor.js`.
 
 Any other AGENTS.md-aware CLI works the same way: read the AGENTS.md block,
 load the quickstart skill if you need detail, run the doctor for diagnostics.
@@ -99,7 +106,6 @@ a Gradata Cloud API key.
 - `review` — review pending lessons and promote / reject them.
 - `promote` — manually promote a lesson to a higher tier.
 - `forget` — remove a lesson or rule by ID.
-- `prove` — generate a provenance proof for the current brain state.
 
 In Claude Code these are `/gradata <cmd>`. In other CLIs invoke the
 equivalent skill by name (`gradata-status`, `gradata-doctor`, …) or run
@@ -129,13 +135,6 @@ is installed. Check `~/.gradata/config.toml` and update `python_path`.
 
 **"Plugin not loading"** — Verify the plugin directory contains
 `.claude-plugin/plugin.json`. The doctor will report this.
-
-## Privacy
-
-- All data stays local under `~/.gradata/`.
-- The daemon binds to `127.0.0.1` only — no network exposure.
-- Cloud sync is optional and only runs when you configure an API key.
-- Optional anonymous telemetry is opt-in and content-free (event counts only).
 
 ## Cloud is optional
 

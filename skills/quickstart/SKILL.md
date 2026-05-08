@@ -59,3 +59,7 @@ node ~/.gradata/plugin/setup/doctor.js
   continue if `/health` is unreachable; report it via the doctor command.
 - Do not bake host-CLI brand names into hook output, skill prose, or rule
   text. The plugin must work across multiple agent runtimes.
+- Do not place `<!-- BEGIN GRADATA -->` / `<!-- END GRADATA -->` on their own
+  line in your own AGENTS.md prose (even inside fenced code blocks). The
+  installer scans line-by-line; any line whose trimmed content equals a
+  marker is treated as a real marker.
