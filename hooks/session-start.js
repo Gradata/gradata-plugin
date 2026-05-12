@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 const { callDaemon } = require('./lib/daemon-client.js');
 const { readHookInput } = require('./lib/hook-input.js');
+const { sendTelemetryMetric } = require('./lib/telemetry.js');
 (async () => {
   try {
     const eventData = readHookInput();
     const sessionId = eventData.session_id || `s_${Date.now()}`;
+    await sendTelemetryMetric('wau_ping', 1);
     const result = await callDaemon('/apply-rules', { prompt: '', session_id: sessionId }, 3000);
     if (!result) {
       process.stderr.write('[gradata] Daemon not available — corrections will not be captured this session\n');
