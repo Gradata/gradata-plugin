@@ -22,6 +22,11 @@ function flagValue(name) {
 
 const AUTO = hasFlag('--auto');
 const PATCH_AGENTS_MD_EXPLICIT = hasFlag('--patch-agents-md');
+const INSTALL_AGENT = (flagValue('--agent') || '').trim().toLowerCase();
+const CODEX_CONFIG_DIR = path.join(HOME, '.codex');
+const CODEX_CONFIG_PATH = path.join(CODEX_CONFIG_DIR, 'config.toml');
+const CURSOR_CONFIG_DIR = path.join(HOME, '.cursor');
+const CURSOR_HOOKS_PATH = path.join(CURSOR_CONFIG_DIR, 'hooks.json');
 
 function tryPython(cmd) {
   try {
@@ -204,6 +209,171 @@ function resolveAgentsMdTarget() {
   return homeCandidate;
 }
 
+// --- Codex hooks patching ---------------------------------------------------
+
+const CODEX_BEGIN_MARKER = '# BEGIN GRADATA CODEX HOOKS';
+const CODEX_END_MARKER = '# END GRADATA CODEX HOOKS';
+
+function buildCodexHookBlock(pluginRoot) {
+  const p = pluginRoot.replace(/\\/g, '/').replace(/"/g, '\\"');
+  return [
+    CODEX_BEGIN_MARKER,
+    '# Managed by Gradata installer. Re-run installer to update paths.',
+    '[features]',
+    'hooks = true',
+    '',
+    '[hooks]',
+    '',
+    '[[hooks.SessionStart]]',
+    'matcher = "*"',
+    '[[hooks.SessionStart.hooks]]',
+    'type = "command"',
+    `command = "node \\"${p}/hooks/session-start.js\\""`,
+    '',
+    '[[hooks.UserPromptSubmit]]',
+    'matcher = "*"',
+    '[[hooks.UserPromptSubmit.hooks]]',
+    'type = "command"',
+    `command = "node \\"${p}/hooks/user-prompt.js\\""`,
+    '',
+    '[[hooks.PostToolUse]]',
+    'matcher = "*"',
+    '[[hooks.PostToolUse.hooks]]',
+    'type = "command"',
+    `command = "node \\"${p}/hooks/post-edit.js\\""`,
+    '[[hooks.PostToolUse.hooks]]',
+    'type = "command"',
+    `command = "node \\"${p}/hooks/post-tool-extended.js\\""`,
+    '',
+    '[[hooks.PreCompact]]',
+    'matcher = "*"',
+    '[[hooks.PreCompact.hooks]]',
+    'type = "command"',
+    `command = "node \\"${p}/hooks/pre-compact.js\\""`,
+    '',
+    '[[hooks.Stop]]',
+    'matcher = "*"',
+    '[[hooks.Stop.hooks]]',
+    'type = "command"',
+    `command = "node \\"${p}/hooks/session-stop.js\\""`,
+    CODEX_END_MARKER,
+    '',
+  ].join('\n');
+}
+
+function patchCodexConfig(pluginRoot) {
+  const block = buildCodexHookBlock(pluginRoot);
+  fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true });
+  if (!fs.existsSync(CODEX_CONFIG_PATH)) {
+    fs.writeFileSync(CODEX_CONFIG_PATH, block, 'utf8');
+    return { action: 'created', path: CODEX_CONFIG_PATH };
+  }
+
+  const original = fs.readFileSync(CODEX_CONFIG_PATH, 'utf8');
+  const begin = original.indexOf(CODEX_BEGIN_MARKER);
+  const end = original.indexOf(CODEX_END_MARKER);
+
+  if (begin === -1 && end === -1) {
+    let out = original;
+    if (!out.endsWith('\n')) out += '\n';
+    if (!out.endsWith('\n\n')) out += '\n';
+    out += block;
+    fs.writeFileSync(CODEX_CONFIG_PATH, out, 'utf8');
+    return { action: 'appended', path: CODEX_CONFIG_PATH };
+  }
+
+  if (begin !== -1 && end !== -1 && begin < end) {
+    const before = original.slice(0, begin).replace(/\s*$/, '');
+    const after = original.slice(end + CODEX_END_MARKER.length).replace(/^\s*/, '');
+    const body = block.trimEnd();
+    let out = '';
+    if (before) out += `${before}\n\n`;
+    out += body;
+    if (after) out += `\n\n${after}`;
+    out += '\n';
+    if (out === original) return { action: 'unchanged', path: CODEX_CONFIG_PATH };
+    fs.writeFileSync(CODEX_CONFIG_PATH, out, 'utf8');
+    return { action: 'replaced', path: CODEX_CONFIG_PATH };
+  }
+
+  return { action: 'refused', path: CODEX_CONFIG_PATH };
+}
+
+// --- Cursor hooks patching --------------------------------------------------
+
+function buildCursorHookCommands(pluginRoot) {
+  const root = pluginRoot.replace(/\\/g, '/').replace(/"/g, '\\"');
+  return {
+    beforeSubmitPrompt: [
+      { command: `node "${root}/hooks/user-prompt.js"` },
+    ],
+    afterFileEdit: [
+      { command: `node "${root}/hooks/post-edit.js"` },
+    ],
+    afterShellExecution: [
+      { command: `node "${root}/hooks/post-tool-extended.js"` },
+    ],
+    stop: [
+      { command: `node "${root}/hooks/session-stop.js"` },
+    ],
+    sessionStart: [
+      { command: `node "${root}/hooks/session-start.js"` },
+    ],
+  };
+}
+
+function normalizeCursorEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  if (typeof entry.command !== 'string' || entry.command.trim() === '') return null;
+  return { command: entry.command.trim() };
+}
+
+function patchCursorHooks(pluginRoot) {
+  const desired = buildCursorHookCommands(pluginRoot);
+  fs.mkdirSync(CURSOR_CONFIG_DIR, { recursive: true });
+
+  let originalObj = { version: 1, hooks: {} };
+  let existed = false;
+  if (fs.existsSync(CURSOR_HOOKS_PATH)) {
+    existed = true;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(CURSOR_HOOKS_PATH, 'utf8'));
+      if (parsed && typeof parsed === 'object') originalObj = parsed;
+    } catch {
+      return { action: 'refused', path: CURSOR_HOOKS_PATH };
+    }
+  }
+
+  const out = {
+    ...originalObj,
+    version: typeof originalObj.version === 'number' ? originalObj.version : 1,
+    hooks: (originalObj.hooks && typeof originalObj.hooks === 'object') ? { ...originalObj.hooks } : {},
+  };
+
+  let changed = false;
+  for (const [eventName, desiredEntries] of Object.entries(desired)) {
+    const currentRaw = Array.isArray(out.hooks[eventName]) ? out.hooks[eventName] : [];
+    const current = currentRaw.map(normalizeCursorEntry).filter(Boolean);
+    const seen = new Set(current.map(e => e.command));
+    for (const want of desiredEntries) {
+      if (!seen.has(want.command)) {
+        current.push(want);
+        seen.add(want.command);
+        changed = true;
+      }
+    }
+    out.hooks[eventName] = current;
+  }
+
+  if (!existed) {
+    fs.writeFileSync(CURSOR_HOOKS_PATH, JSON.stringify(out, null, 2) + '\n', 'utf8');
+    return { action: 'created', path: CURSOR_HOOKS_PATH };
+  }
+  if (!changed) return { action: 'unchanged', path: CURSOR_HOOKS_PATH };
+  fs.writeFileSync(CURSOR_HOOKS_PATH, JSON.stringify(out, null, 2) + '\n', 'utf8');
+  return { action: 'merged', path: CURSOR_HOOKS_PATH };
+}
+
 // --- Main -------------------------------------------------------------------
 
 async function main() {
@@ -277,6 +447,37 @@ async function main() {
     console.log(`AGENTS.md patch skipped: ${e.message}`);
   }
 
+  // Wire host runtime hooks.
+  const pluginRoot = path.join(GRADATA_HOME, 'plugin');
+  const installCursor = INSTALL_AGENT === 'cursor';
+  const installCodex = INSTALL_AGENT === '' || INSTALL_AGENT === 'codex';
+
+  if (installCodex) {
+    try {
+      const codexPatch = patchCodexConfig(pluginRoot);
+      if (codexPatch.action === 'refused') {
+        console.log(`Codex hooks patch refused: ${codexPatch.path} has ambiguous Gradata markers`);
+      } else {
+        console.log(`Codex hooks ${codexPatch.action}: ${codexPatch.path}`);
+      }
+    } catch (e) {
+      console.log(`Codex hooks patch skipped: ${e.message}`);
+    }
+  }
+
+  if (installCursor) {
+    try {
+      const cursorPatch = patchCursorHooks(pluginRoot);
+      if (cursorPatch.action === 'refused') {
+        console.log(`Cursor hooks patch refused: ${cursorPatch.path} is not valid JSON`);
+      } else {
+        console.log(`Cursor hooks ${cursorPatch.action}: ${cursorPatch.path}`);
+      }
+    } catch (e) {
+      console.log(`Cursor hooks patch skipped: ${e.message}`);
+    }
+  }
+
   console.log('\nReady.');
   if (AUTO) {
     const doctor = path.join(GRADATA_HOME, 'plugin', 'setup', 'doctor.js');
@@ -296,7 +497,19 @@ async function main() {
   }
 }
 
-module.exports = { patchAgentsMd, loadTemplate, scanMarkers, BEGIN_MARKER, END_MARKER };
+module.exports = {
+  patchAgentsMd,
+  loadTemplate,
+  scanMarkers,
+  BEGIN_MARKER,
+  END_MARKER,
+  patchCodexConfig,
+  buildCodexHookBlock,
+  CODEX_BEGIN_MARKER,
+  CODEX_END_MARKER,
+  patchCursorHooks,
+  buildCursorHookCommands,
+};
 
 if (require.main === module) {
   main().catch(e => { console.error(e.message); process.exit(1); });
