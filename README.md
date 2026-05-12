@@ -55,7 +55,10 @@ node ~/.gradata/plugin/setup/doctor.js
 
 - **Claude Code** — installer also creates `~/.claude/plugins/gradata`
   symlinking the checkout, so `/gradata` slash-commands work out of the box.
-- **Codex / OpenCode / Hermes** — pick up the Gradata block from `AGENTS.md`
+- **Codex** — installer adds a managed Gradata hook block to
+  `~/.codex/config.toml` so session lifecycle events fire graduation and
+  AGENTS.md maintenance hooks.
+- **OpenCode / Hermes** — pick up the Gradata block from `AGENTS.md`
   automatically. The `gradata-quickstart` skill provides the full reference;
   the doctor command is the universal health check:
   `node ~/.gradata/plugin/setup/doctor.js`.
