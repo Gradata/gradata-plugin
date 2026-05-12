@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const { callDaemon } = require('./lib/daemon-client.js');
 const { readHookInput } = require('./lib/hook-input.js');
+const { sendTelemetryMetric } = require('./lib/telemetry.js');
 (async () => {
   try {
     const eventData = readHookInput();
@@ -14,6 +15,7 @@ const { readHookInput } = require('./lib/hook-input.js');
       if (c > 0 || g > 0) {
         process.stderr.write(`[gradata] Session end: ${c} corrections, ${i} instructions, ${g} graduated\n`);
       }
+      if (g > 0) await sendTelemetryMetric('rules_graduated', g);
     }
 
     const maintainResult = await callDaemon('/maintain', { tasks: ['manifest', 'patterns'] }, 10000);
