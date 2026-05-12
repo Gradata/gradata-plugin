@@ -172,3 +172,50 @@ test('doctor: resolveDaemonPort default is 7342 when nothing configured', () => 
     delete require.cache[require.resolve('../setup/doctor.js')];
   }
 });
+
+test('codex config: absent -> created with managed markers', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gradata-codex-home-'));
+  const prevHome = process.env.HOME;
+  process.env.HOME = home;
+  delete require.cache[require.resolve('../setup/install.js')];
+  const { patchCodexConfig, CODEX_BEGIN_MARKER, CODEX_END_MARKER } = require('../setup/install.js');
+  try {
+    const pluginRoot = path.join(home, '.gradata', 'plugin');
+    const r = patchCodexConfig(pluginRoot);
+    assert.strictEqual(r.action, 'created');
+    const cfg = fs.readFileSync(path.join(home, '.codex', 'config.toml'), 'utf8');
+    assert.ok(cfg.includes(CODEX_BEGIN_MARKER));
+    assert.ok(cfg.includes(CODEX_END_MARKER));
+    assert.ok(cfg.includes('hooks = true'));
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    delete require.cache[require.resolve('../setup/install.js')];
+  }
+});
+
+test('codex config: existing content preserved and gradata block appended idempotently', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gradata-codex-home-'));
+  const prevHome = process.env.HOME;
+  process.env.HOME = home;
+  delete require.cache[require.resolve('../setup/install.js')];
+  const { patchCodexConfig } = require('../setup/install.js');
+  try {
+    const codexDir = path.join(home, '.codex');
+    fs.mkdirSync(codexDir, { recursive: true });
+    const cfgPath = path.join(codexDir, 'config.toml');
+    const original = 'personality = "pragmatic"\n';
+    fs.writeFileSync(cfgPath, original, 'utf8');
+    const pluginRoot = path.join(home, '.gradata', 'plugin');
+    const a = patchCodexConfig(pluginRoot);
+    const first = fs.readFileSync(cfgPath, 'utf8');
+    const b = patchCodexConfig(pluginRoot);
+    const second = fs.readFileSync(cfgPath, 'utf8');
+    assert.strictEqual(a.action, 'appended');
+    assert.ok(first.startsWith(original));
+    assert.strictEqual(b.action, 'unchanged');
+    assert.strictEqual(first, second);
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    delete require.cache[require.resolve('../setup/install.js')];
+  }
+});

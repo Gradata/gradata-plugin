@@ -1,0 +1,11 @@
+{
+  "name": "gradata",
+  "version": "0.1.0",
+  "description": "AI that learns your judgment - auto-captures corrections and injects graduated rules",
+  "author": {
+    "name": "Gradata",
+    "email": "oliver@gradata.ai"
+  },
+  "hooks": "./hooks/hooks.json",
+  "skills": "./skills"
+}
