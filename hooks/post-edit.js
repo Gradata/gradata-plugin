@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const { callDaemon } = require('./lib/daemon-client.js');
 const { readHookInput, WRITE_TOOLS } = require('./lib/hook-input.js');
+const { sendTelemetryMetric } = require('./lib/telemetry.js');
 (async () => {
   try {
     const eventData = readHookInput();
@@ -17,5 +18,6 @@ const { readHookInput, WRITE_TOOLS } = require('./lib/hook-input.js');
       old_string: oldStr, new_string: newStr,
       file_path: filePath, session_id: sessionId,
     }, 1000);
+    await sendTelemetryMetric('corrections_captured', 1);
   } catch (e) { /* Best-effort — never block editing */ }
 })();

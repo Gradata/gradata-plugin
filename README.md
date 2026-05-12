@@ -46,10 +46,14 @@ node ~/.gradata/plugin/setup/doctor.js
 
 ## Privacy
 
-- Gradata does not collect telemetry. No data leaves your machine. Local files only.
+- Telemetry is **opt-in only** via `GRADATA_TELEMETRY=1` (default is off).
+- Opt-in telemetry sends only aggregate counters (`wau_ping`, `corrections_captured`, `rules_graduated`), plugin version, UTC timestamp, and an anonymous `user_id` (sha256 of local install ID).
+- No prompt text, file paths, emails, API keys, lesson content, or correction payloads are sent.
 - All data stays local under `~/.gradata/`.
 - The daemon binds to `127.0.0.1` only — no network exposure.
 - Cloud sync is optional and only runs when you configure an API key.
+
+Telemetry endpoint defaults to `https://api.gradata.ai/telemetry/plugin` and can be overridden for testing with `GRADATA_TELEMETRY_ENDPOINT`.
 
 ## Supported agent CLIs
 
