@@ -58,6 +58,9 @@ node ~/.gradata/plugin/setup/doctor.js
 - **Codex** — installer adds a managed Gradata hook block to
   `~/.codex/config.toml` so session lifecycle events fire graduation and
   AGENTS.md maintenance hooks.
+- **Cursor** — run `gradata install --agent cursor` (or
+  `node ~/.gradata/plugin/setup/install.js --agent cursor`) to create/merge
+  `~/.cursor/hooks.json` with Gradata lifecycle hook commands.
 - **OpenCode / Hermes** — pick up the Gradata block from `AGENTS.md`
   automatically. The `gradata-quickstart` skill provides the full reference;
   the doctor command is the universal health check:

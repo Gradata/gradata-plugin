@@ -219,3 +219,63 @@ test('codex config: existing content preserved and gradata block appended idempo
     delete require.cache[require.resolve('../setup/install.js')];
   }
 });
+
+test('cursor hooks: absent -> created with gradata hook commands', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gradata-cursor-home-'));
+  const prevHome = process.env.HOME;
+  process.env.HOME = home;
+  delete require.cache[require.resolve('../setup/install.js')];
+  const { patchCursorHooks } = require('../setup/install.js');
+  try {
+    const pluginRoot = path.join(home, '.gradata', 'plugin');
+    const r = patchCursorHooks(pluginRoot);
+    assert.strictEqual(r.action, 'created');
+    const hooksPath = path.join(home, '.cursor', 'hooks.json');
+    const cfg = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+    assert.ok(cfg.hooks);
+    assert.ok(Array.isArray(cfg.hooks.beforeSubmitPrompt));
+    assert.ok(Array.isArray(cfg.hooks.afterFileEdit));
+    assert.ok(Array.isArray(cfg.hooks.afterShellExecution));
+    assert.ok(Array.isArray(cfg.hooks.stop));
+    assert.ok(Array.isArray(cfg.hooks.sessionStart));
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    delete require.cache[require.resolve('../setup/install.js')];
+  }
+});
+
+test('cursor hooks: existing entries preserved and gradata commands merged once', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gradata-cursor-home-'));
+  const prevHome = process.env.HOME;
+  process.env.HOME = home;
+  delete require.cache[require.resolve('../setup/install.js')];
+  const { patchCursorHooks } = require('../setup/install.js');
+  try {
+    const cursorDir = path.join(home, '.cursor');
+    fs.mkdirSync(cursorDir, { recursive: true });
+    const hooksPath = path.join(cursorDir, 'hooks.json');
+    fs.writeFileSync(
+      hooksPath,
+      JSON.stringify({
+        version: 1,
+        hooks: {
+          beforeSubmitPrompt: [{ command: 'echo pre-existing' }],
+        },
+      }, null, 2) + '\n',
+      'utf8'
+    );
+    const pluginRoot = path.join(home, '.gradata', 'plugin');
+    const a = patchCursorHooks(pluginRoot);
+    const b = patchCursorHooks(pluginRoot);
+    const cfg = JSON.parse(fs.readFileSync(hooksPath, 'utf8'));
+    assert.strictEqual(a.action, 'merged');
+    assert.strictEqual(b.action, 'unchanged');
+    assert.ok(cfg.hooks.beforeSubmitPrompt.some(h => h.command === 'echo pre-existing'));
+    const gradataPromptHooks = cfg.hooks.beforeSubmitPrompt
+      .filter(h => typeof h.command === 'string' && h.command.includes('/hooks/user-prompt.js'));
+    assert.strictEqual(gradataPromptHooks.length, 1, 'gradata command should not duplicate');
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME; else process.env.HOME = prevHome;
+    delete require.cache[require.resolve('../setup/install.js')];
+  }
+});
