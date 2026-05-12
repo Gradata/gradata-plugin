@@ -24,6 +24,10 @@ const AUTO = hasFlag('--auto');
 const PATCH_AGENTS_MD_EXPLICIT = hasFlag('--patch-agents-md');
 const CODEX_CONFIG_DIR = path.join(HOME, '.codex');
 const CODEX_CONFIG_PATH = path.join(CODEX_CONFIG_DIR, 'config.toml');
+const CLAUDE_CONFIG_DIR = path.join(HOME, '.claude');
+const CLAUDE_SETTINGS_PATH = path.join(CLAUDE_CONFIG_DIR, 'settings.json');
+const CURSOR_CONFIG_PATH = path.join(HOME, '.cursor', 'hooks.json');
+const AGENT = flagValue('--agent');
 
 function tryPython(cmd) {
   try {
@@ -258,6 +262,87 @@ function buildCodexHookBlock(pluginRoot) {
   ].join('\n');
 }
 
+function buildClaudeHookBlock(pluginRoot) {
+  const p = pluginRoot.replace(/\\/g, '/').replace(/"/g, '\\"');
+  const buildCommand = name => `node "${p}/hooks/${name}"`;
+  return {
+    hooks: {
+      SessionStart: [
+        { matcher: '*', hooks: [{ type: 'command', command: buildCommand('session-start.js') }] },
+      ],
+      UserPromptSubmit: [
+        { matcher: '*', hooks: [{ type: 'command', command: buildCommand('user-prompt.js') }] },
+      ],
+      PostToolUse: [
+        { matcher: '*', hooks: [
+          { type: 'command', command: buildCommand('post-edit.js') },
+          {
+            type: 'command',
+            name: 'auto_correct',
+            command: buildCommand('post-tool-extended.js'),
+          },
+        ] },
+      ],
+      PreCompact: [
+        { matcher: '*', hooks: [{ type: 'command', command: buildCommand('pre-compact.js') }] },
+      ],
+      Stop: [
+        {
+          matcher: '*',
+          hooks: [{
+            type: 'command',
+            name: 'session_close',
+            command: buildCommand('session-stop.js'),
+          }],
+        },
+      ],
+    },
+  };
+}
+
+function mergeClaudeSettings(patch) {
+  fs.mkdirSync(CLAUDE_CONFIG_DIR, { recursive: true });
+  let out = {};
+  if (fs.existsSync(CLAUDE_SETTINGS_PATH)) {
+    const existing = fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf8');
+    const parsed = existing.trim() ? JSON.parse(existing) : {};
+    out = typeof parsed === 'object' && parsed !== null ? parsed : {};
+  }
+
+  const current = out.hooks && typeof out.hooks === 'object' && !Array.isArray(out.hooks)
+    ? out.hooks
+    : {};
+  const next = { ...current, ...patch.hooks };
+  const merged = { ...out, hooks: next };
+  const before = JSON.stringify(out);
+  const after = JSON.stringify(merged);
+  if (before === after) return { action: 'unchanged', path: CLAUDE_SETTINGS_PATH };
+  fs.writeFileSync(CLAUDE_SETTINGS_PATH, JSON.stringify(merged, null, 2) + '\n', 'utf8');
+  return { action: current && Object.keys(current).length ? 'updated' : 'created', path: CLAUDE_SETTINGS_PATH };
+}
+
+function patchClaudeSettings(pluginRoot) {
+  return mergeClaudeSettings(buildClaudeHookBlock(pluginRoot));
+}
+
+function buildCursorHookBlock(pluginRoot) {
+  return buildClaudeHookBlock(pluginRoot);
+}
+
+function patchCursorHooks(pluginRoot) {
+  fs.mkdirSync(path.dirname(CURSOR_CONFIG_PATH), { recursive: true });
+  const hadFile = fs.existsSync(CURSOR_CONFIG_PATH);
+  const next = buildCursorHookBlock(pluginRoot);
+  if (fs.existsSync(CURSOR_CONFIG_PATH)) {
+    const before = fs.readFileSync(CURSOR_CONFIG_PATH, 'utf8');
+    if (before.trim() === JSON.stringify(next, null, 2)) {
+      return { action: 'unchanged', path: CURSOR_CONFIG_PATH };
+    }
+  }
+  fs.writeFileSync(CURSOR_CONFIG_PATH, JSON.stringify(next, null, 2) + '\n', 'utf8');
+  return { action: hadFile ? 'updated' : 'created', path: CURSOR_CONFIG_PATH };
+}
+
 function patchCodexConfig(pluginRoot) {
   const block = buildCodexHookBlock(pluginRoot);
   fs.mkdirSync(CODEX_CONFIG_DIR, { recursive: true });
@@ -381,6 +466,24 @@ async function main() {
     console.log(`Codex hooks patch skipped: ${e.message}`);
   }
 
+  if (AGENT === 'claude') {
+    try {
+      const claudePatch = patchClaudeSettings(path.join(GRADATA_HOME, 'plugin'));
+      console.log(`Claude settings ${claudePatch.action}: ${claudePatch.path}`);
+    } catch (e) {
+      console.log(`Claude settings patch skipped: ${e.message}`);
+    }
+  }
+
+  if (AGENT === 'cursor') {
+    try {
+      const cursorPatch = patchCursorHooks(path.join(GRADATA_HOME, 'plugin'));
+      console.log(`Cursor hooks ${cursorPatch.action}: ${cursorPatch.path}`);
+    } catch (e) {
+      console.log(`Cursor hooks patch skipped: ${e.message}`);
+    }
+  }
+
   console.log('\nReady.');
   if (AUTO) {
     const doctor = path.join(GRADATA_HOME, 'plugin', 'setup', 'doctor.js');
@@ -407,6 +510,10 @@ module.exports = {
   BEGIN_MARKER,
   END_MARKER,
   patchCodexConfig,
+  patchClaudeSettings,
+  patchCursorHooks,
+  buildClaudeHookBlock,
+  buildCursorHookBlock,
   buildCodexHookBlock,
   CODEX_BEGIN_MARKER,
   CODEX_END_MARKER,
