@@ -1,38 +1,31 @@
 ---
 name: gradata:doctor
-description: Health check — Python, SDK, daemon, brain vault, permissions
+description: Health check — verify full plugin chain for dogfood readiness
 ---
 
 # Gradata Doctor
 
-Run a comprehensive health check.
+Run the full pre-dogfood gate check:
 
-## How to Execute
-
-Run these checks in order. Present each as pass/fail:
-
-1. **Python:** Run `python3 --version`. Pass if >= 3.10.
-2. **Gradata SDK:** Run `python3 -c "import gradata; print(gradata.__version__)"`. Pass if importable.
-3. **Brain directory:** Check if `~/.gradata/` exists. Check if project brain dir exists.
-4. **Config:** Read `~/.gradata/config.toml`. Check `python_path` is set and the binary exists.
-5. **Daemon:** Read `<brain_dir>/daemon.pid`. Try `GET http://127.0.0.1:<port>/health`. Pass if status=ok.
-6. **Daemon log:** Read last 50 lines of `<brain_dir>/daemon.log` and `<brain_dir>/daemon.log.1`. Report any ERROR or WARNING lines.
-7. **Lessons file:** Check if `<brain_dir>/lessons.md` exists and is readable.
-8. **Database:** Check if `<brain_dir>/system.db` exists and is readable.
-9. **Permissions:** Check `<brain_dir>/` is writable.
-
-Present results as:
-```
-Gradata Doctor
-  Python 3.12.0 .............. OK
-  Gradata SDK v0.2.0 ......... OK
-  Brain directory ............. OK (~/.gradata/projects/a1b2c3d4/)
-  Config ...................... OK (python_path set)
-  Daemon ...................... OK (port 52341, uptime 342s)
-  Daemon log .................. OK (no errors)
-  Lessons file ................ OK (45 lessons)
-  Database .................... OK (system.db present)
-  Permissions ................. OK (writable)
+```bash
+node setup/doctor-full.js
 ```
 
-For each failure, provide an actionable fix suggestion.
+For a synthetic fail-path run (for verification screenshots):
+
+```bash
+node setup/doctor-full.js --simulate-fail
+```
+
+## Checks (ordered)
+
+1. **Hook registration** — validates `~/.claude/settings.json` or project `.claude/settings.json` contains all events and hook commands from `hooks/hooks.json`.
+2. **Hook fires** — sends a synthetic `PostToolUse`-shaped probe through daemon `/log-event` and confirms probe appears in daemon logs within 2s.
+3. **Graduation runnable** — executes a Python dry-run with synthetic lessons and verifies pattern/rule thresholds (`MIN_APPLICATIONS_FOR_PATTERN=2`, `MIN_APPLICATIONS_FOR_RULE=3`) plus at least one RULE promotion.
+4. **AGENTS.md export** — verifies export path can write/read a probe rule line in a temporary project-root `AGENTS.md`.
+
+Output includes pass/fail per check and final summary:
+
+```text
+Dogfood readiness: READY / NOT READY (failed: <step name>)
+```
