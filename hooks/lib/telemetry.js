@@ -51,6 +51,12 @@ function getPluginVersion() {
   return cachedPluginVersion;
 }
 
+function determineCohort(installId) {
+  if (!installId || typeof installId !== 'string' || installId.length < 2) return 'control';
+  const hash = crypto.createHash('sha256').update(installId).digest('hex');
+  return hash[0] < '8' ? 'control' : 'treatment';
+}
+
 function postJson(url, payload) {
   return new Promise((resolve) => {
     let requestUrl;
@@ -108,8 +114,26 @@ async function sendTelemetryMetric(metric, count = 1) {
   });
 }
 
+async function sendTelemetryEvent(event, payload = {}) {
+  if (!telemetryEnabled()) return false;
+  const userId = getAnonymousUserId();
+  if (!userId) return false;
+  if (typeof event !== 'string' || !event.trim()) return false;
+
+  return postJson(TELEMETRY_ENDPOINT, {
+    event,
+    user_id: userId,
+    ts: new Date().toISOString(),
+    plugin_version: getPluginVersion(),
+    ...payload,
+  });
+}
+
 module.exports = {
   telemetryEnabled,
+  ensureInstallId,
   getAnonymousUserId,
+  determineCohort,
   sendTelemetryMetric,
+  sendTelemetryEvent,
 };

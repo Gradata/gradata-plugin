@@ -37,3 +37,24 @@ test('anonymous user id is stable 64-char lowercase hex hash', () => {
   if (prevHome === undefined) delete process.env.GRADATA_HOME; else process.env.GRADATA_HOME = prevHome;
   delete require.cache[require.resolve('../hooks/lib/telemetry.js')];
 });
+
+test('determineCohort returns control or treatment deterministically', () => {
+  delete require.cache[require.resolve('../hooks/lib/telemetry.js')];
+  const { determineCohort } = require('../hooks/lib/telemetry.js');
+  // Same input always returns same result
+  const a = determineCohort('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  const b = determineCohort('aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee');
+  assert.strictEqual(a, b);
+  assert.ok(a === 'control' || a === 'treatment', 'must be control or treatment');
+  delete require.cache[require.resolve('../hooks/lib/telemetry.js')];
+});
+
+test('determineCohort returns control for empty/bad input', () => {
+  delete require.cache[require.resolve('../hooks/lib/telemetry.js')];
+  const { determineCohort } = require('../hooks/lib/telemetry.js');
+  assert.strictEqual(determineCohort(''), 'control');
+  assert.strictEqual(determineCohort('x'), 'control');
+  assert.strictEqual(determineCohort(null), 'control');
+  assert.strictEqual(determineCohort(undefined), 'control');
+  delete require.cache[require.resolve('../hooks/lib/telemetry.js')];
+});

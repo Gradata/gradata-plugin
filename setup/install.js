@@ -118,24 +118,39 @@ async function ask(question) {
 
 // --- Starter brain seeding ---------------------------------------------------
 
-// Feature flag: check env GRADATA_STARTER_BRAIN=true or config.toml
-// [starter_brain] section with enabled = true. Default: false.
-function isStarterBrainEnabled() {
-  if (process.env.GRADATA_STARTER_BRAIN === 'true') return true;
-  if (process.env.GRADATA_STARTER_BRAIN === '1') return true;
-  const configPath = path.join(GRADATA_HOME, 'config.toml');
-  if (!fs.existsSync(configPath)) return false;
-  try {
-    const lines = fs.readFileSync(configPath, 'utf8').split('\n');
-    let inSection = false;
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed === '[starter_brain]') { inSection = true; continue; }
-      if (trimmed.startsWith('[') && trimmed.endsWith(']')) { inSection = false; continue; }
-      if (inSection && /^enabled\s*=\s*true\s*$/.test(trimmed)) return true;
-    }
-    return false;
-  } catch { return false; }
+// Cohort assignment: deterministic 50/50 split via hash(installId)[0].
+// Treatment cohort gets starter-brain seed; control does not.
+function seedStarterBrainIfTreatment() {
+  const telemetry = require('../hooks/lib/telemetry.js');
+  const installId = telemetry.ensureInstallId();
+  const cohort = telemetry.determineCohort(installId);
+  if (cohort !== 'treatment') {
+    console.log(`Cohort: ${cohort} — skipping starter brain seed.`);
+    return;
+  }
+  console.log(`Cohort: ${cohort} — seeding starter brain.`);
+  const brainRulesDir = path.join(GRADATA_HOME, 'brain', 'rules');
+  fs.mkdirSync(brainRulesDir, { recursive: true });
+  const starterPath = path.join(brainRulesDir, 'starter.json');
+
+  // Idempotency: if file exists with the expected rule IDs, skip.
+  if (fs.existsSync(starterPath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(starterPath, 'utf8'));
+      if (Array.isArray(existing)) {
+        const existingIds = new Set(existing.map(r => r.id));
+        const expectedIds = new Set(STARTER_RULES.map(r => r.id));
+        const allPresent = [...expectedIds].every(id => existingIds.has(id));
+        if (allPresent && existing.length >= STARTER_RULES.length) {
+          console.log('Starter brain rules already seeded — skipping.');
+          return;
+        }
+      }
+    } catch { /* corrupt or empty file — reseed below */ }
+  }
+
+  fs.writeFileSync(starterPath, JSON.stringify(STARTER_RULES, null, 2) + '\n', 'utf8');
+  console.log(`Starter brain rules seeded: ${starterPath}`);
 }
 
 // 10 safe starter rules. Id, title, description, tier.
@@ -202,35 +217,6 @@ const STARTER_RULES = [
     tier: 'RULE'
   }
 ];
-
-function seedStarterBrain() {
-  if (!isStarterBrainEnabled()) {
-    console.log('Starter brain not enabled — skipping seed.');
-    return;
-  }
-  const brainRulesDir = path.join(GRADATA_HOME, 'brain', 'rules');
-  fs.mkdirSync(brainRulesDir, { recursive: true });
-  const starterPath = path.join(brainRulesDir, 'starter.json');
-
-  // Idempotency: if file exists with the expected rule IDs, skip.
-  if (fs.existsSync(starterPath)) {
-    try {
-      const existing = JSON.parse(fs.readFileSync(starterPath, 'utf8'));
-      if (Array.isArray(existing)) {
-        const existingIds = new Set(existing.map(r => r.id));
-        const expectedIds = new Set(STARTER_RULES.map(r => r.id));
-        const allPresent = [...expectedIds].every(id => existingIds.has(id));
-        if (allPresent && existing.length >= STARTER_RULES.length) {
-          console.log('Starter brain rules already seeded — skipping.');
-          return;
-        }
-      }
-    } catch { /* corrupt or empty file — reseed below */ }
-  }
-
-  fs.writeFileSync(starterPath, JSON.stringify(STARTER_RULES, null, 2) + '\n', 'utf8');
-  console.log(`Starter brain rules seeded: ${starterPath}`);
-}
 
 // --- AGENTS.md patching -----------------------------------------------------
 
@@ -393,8 +379,21 @@ async function main() {
     console.log(`AGENTS.md patch skipped: ${e.message}`);
   }
 
-  // Seed starter brain rules (gated by feature flag)
-  seedStarterBrain();
+  // Seed starter brain rules (cohort-based: treatment only)
+  seedStarterBrainIfTreatment();
+
+  // Emit install_completed telemetry event
+  try {
+    const telemetry = require('../hooks/lib/telemetry.js');
+    const installId = telemetry.ensureInstallId();
+    const cohort = telemetry.determineCohort(installId);
+    await telemetry.sendTelemetryEvent('install_completed', {
+      install_id: installId,
+      cohort,
+    });
+  } catch (e) {
+    // Best-effort — never block setup on telemetry failure
+  }
 
   console.log('\nReady.');
   if (AUTO) {
