@@ -1,0 +1,14 @@
+Gradata Doctor
+  Hook registration ............. FAIL (5 registration issue(s) in /home/olive/.claude/settings.json)
+  Hook registration fix ......... Reinstall or re-enable the plugin, then verify hooks from hooks/hooks.json are present: SessionStart: missing registration; UserPromptSubmit: missing registration; PostToolUse: missing registration; PreCompact: missing registration; Stop: missing registration
+  Hook fires .................... FAIL (daemon did not respond to /log-event)
+  Hook fires fix ................ Start Gradata daemon by opening Claude Code with plugin enabled, then rerun doctor.
+  Graduation runnable ........... FAIL (dry-run graduation failed: Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+ModuleNotFoundError: No module named 'gradata')
+  Graduation runnable fix ....... Ensure `gradata` SDK is installed in `python3` environment and graduation API is importable.
+  AGENTS.md export .............. FAIL (AGENTS.md export check failed: Traceback (most recent call last):
+  File "<string>", line 3, in <module>
+ModuleNotFoundError: No module named 'gradata')
+  AGENTS.md export fix .......... Verify SDK export path is writable and `gradata.enhancements.rule_export.export_rules` works in current python env.
+Dogfood readiness: NOT READY (failed: Hook registration)
