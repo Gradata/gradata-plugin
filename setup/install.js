@@ -116,6 +116,122 @@ async function ask(question) {
   return new Promise(resolve => rl.question(question, ans => { rl.close(); resolve(ans); }));
 }
 
+// --- Starter brain seeding ---------------------------------------------------
+
+// Feature flag: check env GRADATA_STARTER_BRAIN=true or config.toml
+// [starter_brain] section with enabled = true. Default: false.
+function isStarterBrainEnabled() {
+  if (process.env.GRADATA_STARTER_BRAIN === 'true') return true;
+  if (process.env.GRADATA_STARTER_BRAIN === '1') return true;
+  const configPath = path.join(GRADATA_HOME, 'config.toml');
+  if (!fs.existsSync(configPath)) return false;
+  try {
+    const lines = fs.readFileSync(configPath, 'utf8').split('\n');
+    let inSection = false;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed === '[starter_brain]') { inSection = true; continue; }
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) { inSection = false; continue; }
+      if (inSection && /^enabled\s*=\s*true\s*$/.test(trimmed)) return true;
+    }
+    return false;
+  } catch { return false; }
+}
+
+// 10 safe starter rules. Id, title, description, tier.
+// All rules are safe defaults: no dangerous file ops, no PII, no production mutators.
+const STARTER_RULES = [
+  {
+    id: 'starter-01',
+    title: 'Always run tests before committing code',
+    description: 'Run the full test suite before every commit to catch regressions early.',
+    tier: 'RULE'
+  },
+  {
+    id: 'starter-02',
+    title: "Don't use default exports in TypeScript files",
+    description: 'Prefer named exports over default exports for better IDE support and tree-shaking.',
+    tier: 'RULE'
+  },
+  {
+    id: 'starter-03',
+    title: 'Wrap HTTP fetch calls in try/catch blocks',
+    description: 'Always handle network errors by wrapping fetch, axios, or other HTTP calls in try/catch.',
+    tier: 'RULE'
+  },
+  {
+    id: 'starter-04',
+    title: "Don't push directly to main — use feature branches",
+    description: 'All work must ship via feature branches and pull requests. Never push to main directly.',
+    tier: 'RULE'
+  },
+  {
+    id: 'starter-05',
+    title: 'Run the formatter before committing',
+    description: 'Run the project formatter (e.g., prettier, biome) before every commit.',
+    tier: 'RULE'
+  },
+  {
+    id: 'starter-06',
+    title: "Don't commit secrets or API keys to the repository",
+    description: 'Never commit credentials, tokens, or API keys. Use environment variables or a secrets manager.',
+    tier: 'RULE'
+  },
+  {
+    id: 'starter-07',
+    title: 'Use descriptive variable names — no single-letter vars except loop counters',
+    description: 'Variable names should clearly describe their purpose. Reserve single-letter names for loop indices only.',
+    tier: 'RULE'
+  },
+  {
+    id: 'starter-08',
+    title: 'Keep functions under 50 lines — break up larger ones',
+    description: 'Functions longer than 50 lines should be split into smaller, focused functions.',
+    tier: 'PATTERN'
+  },
+  {
+    id: 'starter-09',
+    title: 'Write tests for new features before implementing them',
+    description: 'Follow test-driven development: write failing tests first, then implement to make them pass.',
+    tier: 'RULE'
+  },
+  {
+    id: 'starter-10',
+    title: "Don't leave console.log statements in production code",
+    description: 'Remove debug logging before merging. Use a proper logger for intentional production logging.',
+    tier: 'RULE'
+  }
+];
+
+function seedStarterBrain() {
+  if (!isStarterBrainEnabled()) {
+    console.log('Starter brain not enabled — skipping seed.');
+    return;
+  }
+  const brainRulesDir = path.join(GRADATA_HOME, 'brain', 'rules');
+  fs.mkdirSync(brainRulesDir, { recursive: true });
+  const starterPath = path.join(brainRulesDir, 'starter.json');
+
+  // Idempotency: if file exists with the expected rule IDs, skip.
+  if (fs.existsSync(starterPath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(starterPath, 'utf8'));
+      if (Array.isArray(existing)) {
+        const existingIds = new Set(existing.map(r => r.id));
+        const expectedIds = new Set(STARTER_RULES.map(r => r.id));
+        const allPresent = [...expectedIds].every(id => existingIds.has(id));
+        if (allPresent && existing.length >= STARTER_RULES.length) {
+          console.log('Starter brain rules already seeded — skipping.');
+          return;
+        }
+      }
+    } catch { /* corrupt or empty file — reseed below */ }
+  }
+
+  fs.writeFileSync(starterPath, JSON.stringify(STARTER_RULES, null, 2) + '\n', 'utf8');
+  console.log(`Starter brain rules seeded: ${starterPath}`);
+}
+
 // --- AGENTS.md patching -----------------------------------------------------
 
 const BEGIN_MARKER = '<!-- BEGIN GRADATA -->';
@@ -276,6 +392,9 @@ async function main() {
   } catch (e) {
     console.log(`AGENTS.md patch skipped: ${e.message}`);
   }
+
+  // Seed starter brain rules (gated by feature flag)
+  seedStarterBrain();
 
   console.log('\nReady.');
   if (AUTO) {
