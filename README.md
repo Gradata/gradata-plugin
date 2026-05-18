@@ -80,7 +80,35 @@ Verify the install:
 node ~/.gradata/plugin/setup/doctor.js
 ```
 
+## What this added to your setup
+
+- **Plugin checkout** at `~/.gradata/plugin/` (hooks + skills + setup).
+- **AGENTS.md** updated with a Gradata section between `<!-- BEGIN GRADATA -->`
+  and `<!-- END GRADATA -->` markers (re-runs replace the section in place).
+- **Daemon-ready config** at `~/.gradata/config.toml` pointing at a working
+  `python3 >= 3.10`. Install the SDK from git source to bring up the daemon
+  (PyPI publish coming soon; install from source for now):
+
+  ```sh
+  pip install git+https://github.com/Gradata/gradata.git#subdirectory=Gradata
+  # or, on system Python (Debian/Ubuntu — handles PEP 668):
+  pip install --user git+https://github.com/Gradata/gradata.git#subdirectory=Gradata
+  # or with pipx (recommended for isolation):
+  pipx install git+https://github.com/Gradata/gradata.git#subdirectory=Gradata
+  ```
+
+## Privacy
+
+- Telemetry is **opt-in only** via `GRADATA_TELEMETRY=1` (default is off).
+- Opt-in telemetry sends only aggregate counters (`wau_ping`, `corrections_captured`, `rules_graduated`), plugin version, UTC timestamp, and an anonymous `user_id` (sha256 of local install ID).
+- No prompt text, file paths, emails, API keys, lesson content, or correction payloads are sent.
+- All data stays local under `~/.gradata/`.
+- The daemon binds to `127.0.0.1` only — no network exposure.
+- Cloud sync is optional and only runs when you configure an API key.
+
 ---
+
+Telemetry endpoint defaults to `https://api.gradata.ai/telemetry/plugin` and can be overridden for testing with `GRADATA_TELEMETRY_ENDPOINT`.
 
 ## Supported agent CLIs
 
