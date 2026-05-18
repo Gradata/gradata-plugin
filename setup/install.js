@@ -3,6 +3,11 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const {
+  generateInstallId,
+  getCohort,
+  emitInstallCompleted,
+} = require('../hooks/lib/telemetry.js');
 
 const HOME = process.env.HOME || process.env.USERPROFILE || '~';
 const GRADATA_HOME = process.env.GRADATA_HOME || path.join(HOME, '.gradata');
@@ -483,6 +488,12 @@ async function main() {
       console.log(`Cursor hooks patch skipped: ${e.message}`);
     }
   }
+
+  // --- Telemetry: install_completed event + cohort assignment ---
+  const installId = generateInstallId();
+  const cohort = getCohort(installId);
+  emitInstallCompleted(installId, cohort);
+  console.log(`Install ID: ${installId} (cohort: ${cohort})`);
 
   console.log('\nReady.');
   if (AUTO) {

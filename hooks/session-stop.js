@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 const { callDaemon } = require('./lib/daemon-client.js');
 const { readHookInput } = require('./lib/hook-input.js');
+const { emitFirstRuleInjected, getInstallId } = require('./lib/telemetry.js');
 (async () => {
   try {
     const eventData = readHookInput();
@@ -13,6 +14,11 @@ const { readHookInput } = require('./lib/hook-input.js');
       const g = endResult.lessons_graduated || 0;
       if (c > 0 || g > 0) {
         process.stderr.write(`[gradata] Session end: ${c} corrections, ${i} instructions, ${g} graduated\n`);
+      }
+      // Emit first_rule_injected if rules are active (graduation happened OR active rules present)
+      if (g > 0 || (endResult.active_rules || 0) > 0) {
+        const installId = endResult.install_id || getInstallId();
+        if (installId) emitFirstRuleInjected(installId);
       }
     }
 
